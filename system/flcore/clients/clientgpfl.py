@@ -24,6 +24,10 @@ from sklearn.preprocessing import label_binarize
 from sklearn import metrics
 from flcore.clients.clientbase import Client
 
+from pytorch_metric_learning import distances, losses, miners, reducers, testers
+from pytorch_metric_learning.utils.accuracy_calculator import AccuracyCalculator
+from pytorch_metric_learning.utils.inference import CustomKNN
+
 
 class clientGPFL(Client):
     def __init__(self, args, id, train_samples, test_samples, **kwargs):
@@ -56,6 +60,13 @@ class clientGPFL(Client):
         self.sample_per_class = self.sample_per_class / torch.sum(
             self.sample_per_class)
         
+        distance = distances.CosineSimilarity()#LpDistance(normalize_embeddings=True, p=2, power=1)
+        reducer = reducers.ThresholdReducer(low=0)
+        self.loss_func = losses.TripletMarginLoss(margin=0.2,  distance=distance, reducer=reducer)
+        self.mining_func = miners.TripletMarginMiner(
+            margin=0.2, distance=distance, type_of_triplets="all" #"hard" is hard to learn, why?
+        )
+        
 
     def train(self):
         trainloader = self.load_train_data()
@@ -87,6 +98,9 @@ class clientGPFL(Client):
 
                 loss = self.loss(output, y)
                 loss += softmax_loss
+
+                indices_tuple = self.mining_func(feat, y)
+                loss += self.loss_func(feat, y, indices_tuple)
 
                 emb = torch.zeros_like(feat)
                 for i, yy in enumerate(y):

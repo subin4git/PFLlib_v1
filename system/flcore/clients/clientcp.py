@@ -24,6 +24,11 @@ from sklearn.preprocessing import label_binarize
 from sklearn import metrics
 from flcore.clients.clientbase import Client
 
+from pytorch_metric_learning import distances, losses, miners, reducers, testers
+from pytorch_metric_learning.utils.accuracy_calculator import AccuracyCalculator
+from pytorch_metric_learning.utils.inference import CustomKNN
+
+
 
 class clientCP(Client):
     def __init__(self, args, id, train_samples, test_samples, **kwargs):
@@ -44,6 +49,13 @@ class clientCP(Client):
 
         self.pm_train = []
         self.pm_test = []
+
+        distance = distances.CosineSimilarity()#LpDistance(normalize_embeddings=True, p=2, power=1)
+        reducer = reducers.ThresholdReducer(low=0)
+        self.loss_func = losses.TripletMarginLoss(margin=0.2,  distance=distance, reducer=reducer)
+        self.mining_func = miners.TripletMarginMiner(
+            margin=0.2, distance=distance, type_of_triplets="all" #"hard" is hard to learn, why?
+        )
             
     def set_parameters(self, base):
         for new_param, old_param in zip(base.parameters(), self.model.model.base.parameters()):
@@ -137,7 +149,9 @@ class clientCP(Client):
                     x = x.to(self.device)
                 y = y.to(self.device)
                 output, rep, rep_base = self.model(x, is_rep=True, context=self.context)
-                loss = self.loss(output, y)
+                indices_tuple = self.mining_func(rep, y)
+                loss = self.loss_func(rep, y, indices_tuple)
+                loss += self.loss(output, y)
                 loss += MMD(rep, rep_base, 'rbf', self.device) * self.lamda
                 self.opt.zero_grad()
                 loss.backward()

@@ -24,6 +24,10 @@ from sklearn.preprocessing import label_binarize
 from sklearn import metrics
 from torch.autograd import Variable
 
+from pytorch_metric_learning import distances, losses, miners, reducers, testers
+from pytorch_metric_learning.utils.accuracy_calculator import AccuracyCalculator
+from pytorch_metric_learning.utils.inference import CustomKNN
+
 
 class clientAvgDBE(Client):
     def __init__(self, args, id, train_samples, test_samples, **kwargs):
@@ -49,6 +53,12 @@ class clientAvgDBE(Client):
         self.client_mean = nn.Parameter(Variable(torch.zeros_like(rep[0])))
         self.opt_client_mean = torch.optim.SGD([self.client_mean], lr=self.learning_rate)
 
+        distance = distances.CosineSimilarity()#LpDistance(normalize_embeddings=True, p=2, power=1)
+        reducer = reducers.ThresholdReducer(low=0)
+        self.loss_func = losses.TripletMarginLoss(margin=0.2,  distance=distance, reducer=reducer)
+        self.mining_func = miners.TripletMarginMiner(
+            margin=0.2, distance=distance, type_of_triplets="all" #"hard" is hard to learn, why?
+        )
 
     def train(self):
         trainloader = self.load_train_data()
@@ -89,6 +99,10 @@ class clientAvgDBE(Client):
                 else:
                     output = self.model.head(rep)
                     loss = self.loss(output, y)
+
+                indices_tuple = self.mining_func(rep, y)
+                loss += self.loss_func(rep, y, indices_tuple)
+                
                 # ====== end
 
                 self.opt_client_mean.zero_grad()

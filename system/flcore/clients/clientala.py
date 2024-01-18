@@ -21,6 +21,10 @@ from flcore.clients.clientbase import Client
 from utils.data_utils import read_client_data
 from utils.ALA import ALA
 
+from pytorch_metric_learning import distances, losses, miners, reducers, testers
+from pytorch_metric_learning.utils.accuracy_calculator import AccuracyCalculator
+from pytorch_metric_learning.utils.inference import CustomKNN
+
 
 class clientALA(Client):
     def __init__(self, args, id, train_samples, test_samples, **kwargs):
@@ -33,6 +37,13 @@ class clientALA(Client):
         train_data = read_client_data(self.dataset, self.id, is_train=True)
         self.ALA = ALA(self.id, self.loss, train_data, self.batch_size, 
                     self.rand_percent, self.layer_idx, self.eta, self.device)
+
+        distance = distances.CosineSimilarity()#LpDistance(normalize_embeddings=True, p=2, power=1)
+        reducer = reducers.ThresholdReducer(low=0)
+        self.loss_func = losses.TripletMarginLoss(margin=0.2,  distance=distance, reducer=reducer)
+        self.mining_func = miners.TripletMarginMiner(
+            margin=0.2, distance=distance, type_of_triplets="all" #"hard" is hard to learn, why?
+        )
 
     def train(self):
         trainloader = self.load_train_data()
@@ -54,9 +65,16 @@ class clientALA(Client):
                 y = y.to(self.device)
                 if self.train_slow:
                     time.sleep(0.1 * np.abs(np.random.rand()))
-                output = self.model(x)
-                loss = self.loss(output, y)
+
+                embeddings = self.model.hx(x)
+                indices_tuple = self.mining_func(embeddings, y)
+                loss1 = self.loss_func(embeddings, y, indices_tuple)
+
+                output = self.model.clf(embeddings)
+                loss2 = self.loss(output, y)
+
                 self.optimizer.zero_grad()
+                loss = loss1+loss2
                 loss.backward()
                 self.optimizer.step()
 
