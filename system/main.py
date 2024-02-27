@@ -61,6 +61,7 @@ from flcore.servers.servergpfl import GPFL
 from flcore.servers.serverntd import FedNTD
 from flcore.servers.servergh import FedGH
 from flcore.servers.serveravgDBE import FedAvgDBE
+from flcore.servers.serverlocalhd import FedLocalHead
 
 from flcore.trainmodel.models import *
 
@@ -293,6 +294,9 @@ def run(args):
 
         elif args.algorithm == "FedALA":
             server = FedALA(args, i)
+
+        elif args.algorithm == "LocalHead":
+            server = FedLocalHead(args, i)
 
         elif args.algorithm == "FedPAC":
             args.head = copy.deepcopy(args.model.fc)
